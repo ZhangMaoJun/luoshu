@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>洛书与幻方 · 3D 穿线可视化</title>
+<style>
+  :root {
+    --bg: #070a0e;
+    --ink: #e8eef7;
+    --dim: #7d8ba0;
+    --up: #ff8a3d;
+    --down: #38bdf8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #c { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #c.grabbing { cursor: grabbing; }
+
+  .hud {
+    position: fixed; top: 26px; left: 32px;
+    pointer-events: none; user-select: none;
+  }
+  .hud h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.5px; }
+  .hud p { margin-top: 7px; font-size: 12px; color: var(--dim); line-height: 1.75; letter-spacing: 0.2px; }
+  .hud .sep { opacity: 0.35; margin: 0 7px; }
+
+  /* ---------- 控制面板 ---------- */
+  .panel {
+    position: fixed; top: 24px; right: 32px;
+    background: rgba(13, 22, 35, 0.66);
+    border: 1px solid rgba(120, 160, 210, 0.20);
+    border-radius: 14px;
+    padding: 13px 15px;
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    display: flex; flex-direction: column; gap: 9px;
+    user-select: none;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+    max-width: 420px;
+  }
+  .panel .row { display: flex; align-items: center; gap: 11px; }
+  .panel .lab {
+    font-size: 11px; color: #6d8099; letter-spacing: 0.4px;
+    width: 30px; flex: none; text-align: left;
+  }
+  .seg {
+    display: flex; gap: 3px;
+    background: rgba(6, 12, 20, 0.6);
+    border-radius: 9px; padding: 3px;
+  }
+  .seg button {
+    appearance: none; border: 0; background: transparent;
+    color: #8798ae; font: inherit; font-size: 11.5px;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    transition: background .16s, color .16s;
+    letter-spacing: 0.3px; white-space: nowrap;
+  }
+  .seg button:hover { color: #cfdcea; }
+  .seg button.on { background: rgba(76, 120, 174, 0.58); color: #f0f6ff; }
+  .seg button.on.alt { background: rgba(196, 122, 58, 0.55); color: #ffd9b8; }
+  .seg button:disabled { opacity: 0.3; cursor: default; }
+  .seg button:disabled:hover { color: #8798ae; }
+
+  .nav {
+    display: flex; align-items: center; gap: 2px;
+    background: rgba(6, 12, 20, 0.6);
+    border-radius: 9px; padding: 3px;
+  }
+  .nav button {
+    appearance: none; border: 0; background: transparent;
+    color: #a8b8cc; font: inherit; font-size: 14px; line-height: 1;
+    width: 26px; height: 24px; border-radius: 6px; cursor: pointer;
+    transition: background .16s, color .16s;
+  }
+  .nav button:hover { background: rgba(76, 120, 174, 0.45); color: #f0f6ff; }
+  .nav button:disabled { opacity: 0.28; cursor: default; }
+  .nav button:disabled:hover { background: transparent; color: #a8b8cc; }
+  .nav button.wide {
+    width: auto; padding: 0 7px;
+    font-size: 10.5px; letter-spacing: 0.4px;
+  }
+  .nav .pos {
+    min-width: 58px; text-align: center;
+    font-size: 11.5px; color: #c2d0e0; letter-spacing: 0.3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .nav.off { opacity: 0.4; }
+
+  .panel .meta {
+    font-size: 10.5px; color: #5e7088; letter-spacing: 0.3px;
+    padding-top: 7px; margin-top: 1px;
+    border-top: 1px solid rgba(120, 160, 210, 0.13);
+    line-height: 1.7;
+  }
+  .panel .meta b { font-weight: 500; color: #8296ad; }
+  .panel .meta .hl { color: #c8a878; }
+
+  .legend {
+    position: fixed; left: 32px; bottom: 32px;
+    display: flex; flex-direction: column; gap: 9px;
+    font-size: 12px; color: var(--dim);
+    pointer-events: none; user-select: none;
+  }
+  .legend span { display: flex; align-items: center; gap: 9px; }
+  .legend i { width: 17px; height: 3px; border-radius: 2px; display: block; flex: none; }
+  .legend i.up { background: var(--up); box-shadow: 0 0 9px rgba(255,138,61,0.65); }
+  .legend i.down { background: var(--down); box-shadow: 0 0 9px rgba(56,189,248,0.6); }
+
+  .bar {
+    position: fixed; right: 32px; bottom: 32px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .bar button {
+    appearance: none; border: 1px solid rgba(140,175,220,0.26);
+    background: rgba(18,30,46,0.55);
+    color: var(--ink);
+    font: inherit; font-size: 12.5px; letter-spacing: 0.4px;
+    padding: 8px 16px; border-radius: 999px;
+    cursor: pointer;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    transition: border-color .18s, background .18s, color .18s;
+  }
+  .bar button:hover { border-color: rgba(160,200,245,0.58); background: rgba(32,50,74,0.72); }
+  .bar button.on { border-color: rgba(255,138,61,0.55); color: #ffb37a; }
+
+  .hint {
+    position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%);
+    font-size: 11.5px; color: rgba(125,139,160,0.62);
+    letter-spacing: 0.5px; pointer-events: none; user-select: none;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 980px) {
+    .hud { top: 16px; left: 18px; }
+    .hud h1 { font-size: 15px; }
+    .hud p { font-size: 10.5px; }
+    .panel { top: auto; bottom: 74px; right: 14px; padding: 10px 11px; gap: 7px; }
+    .panel .lab { width: 26px; font-size: 10px; }
+    .seg button { padding: 4px 7px; font-size: 11px; }
+    .nav .pos { min-width: 50px; font-size: 11px; }
+    .panel .meta { font-size: 9.5px; padding-top: 5px; }
+    .legend { left: 18px; bottom: 74px; font-size: 11px; }
+    .bar { right: 18px; bottom: 18px; }
+    .bar button { padding: 7px 13px; font-size: 12px; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud">
+  <h1>幻方穿线 · 上下交替半圆</h1>
+  <p>1 → n² 数序连线<span class="sep">|</span>相邻两段交替从平面上下穿过</p>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <span class="lab">阶数</span>
+    <div class="seg" id="seg-order">
+      <button data-v="3">3</button>
+      <button data-v="4">4</button>
+      <button data-v="5">5</button>
+      <button data-v="6">6</button>
+      <button data-v="7">7</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lab">构型</span>
+    <div class="nav" id="cfg-nav">
+      <button id="cfg-prev" aria-label="上一个构型">‹</button>
+      <span class="pos" id="cfg-pos">1 / 1</span>
+      <button id="cfg-next" aria-label="下一个构型">›</button>
+      <button id="cfg-rand" class="wide" aria-label="随机跳到某个构型">随机</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lab">朝向</span>
+    <div class="seg" id="seg-rot">
+      <button data-v="0">0°</button>
+      <button data-v="1">90°</button>
+      <button data-v="2">180°</button>
+      <button data-v="3">270°</button>
+      <button data-v="m" class="alt">镜像</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lab">弧高</span>
+    <div class="seg" id="seg-arc">
+      <button data-v="semi">半圆</button>
+      <button data-v="flat">扁平</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lab">1→2</span>
+    <div class="seg" id="seg-phase">
+      <button data-v="1">上</button>
+      <button data-v="0">下</button>
+    </div>
+  </div>
+  <div class="meta" id="meta"></div>
+</div>
+
+<div class="legend">
+  <span><i class="up"></i>平面上方 · 拱桥</span>
+  <span><i class="down"></i>平面下方 · 隧道</span>
+</div>
+
+<div class="hint">拖拽旋转 · 滚轮缩放 · 双击重播 · ←→ 换朝向</div>
+
+<div class="bar">
+  <button id="btn-replay">重播</button>
+  <button id="btn-spin">自转</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------- 小工具 ---------------- */
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+  function cross(a, b) {
+    return {
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x
+    };
+  }
+  function normalize(v) {
+    const l = Math.hypot(v.x, v.y, v.z) || 1;
+    return { x: v.x / l, y: v.y / l, z: v.z / l };
+  }
+
+  /* ---------------- 画布 ---------------- */
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  let W = 1, H = 1, DPR = 1;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  /* ============ 幻方矩阵 ============
+     3 阶固定用洛书（后天八卦方位，上南下北）：
+        4 9 2
+        3 5 7
+        8 1 6
+     4 阶：10 个互不等价的标准解（均验算，两两至少 14/16 位不同）
+     5/7 阶：Siamese 法    6 阶：LUX 标准解
+
+     本质类数（不含旋转反射）：
+       3 阶 1（洛书）  4 阶 880  5 阶 275,305,224  6 阶 1.775×10^19  7 阶 未知
+  ================================== */
+  const GUA = { 1: '坎', 2: '坤', 3: '震', 4: '巽', 5: '中', 6: '乾', 7: '兑', 8: '艮', 9: '离' };
+
+  const LUOSHU = [
+    [4, 9, 2],
+    [3, 5, 7],
+    [8, 1, 6]
+  ];
+
+  const FOURTH_ENC = [
+  '01efcd23b6947a5801efbd24c6937a5801fecd32b6857a490e1fc963b2d475a80e1fb964c2d375a80f1eb865c3d274a910efdc23a7946b5810fedc32a7856b4910feac35d7826b491e0fa974d2c365b8',
+  '1f0ed872a3c564b91f0ea875d3c264b902dfec31b784596a02dfec3195a67b4802dfbc34e781596a02df9c36e5a17b4802fdce13b964758a02fdce1375a8b94602fdbe14c963758a02fd7e18c5a3b946',
+  '0d2fea5193c674b80d2fe871b3c4569a0d2fb874e3c1569a0d2f9a56e3c174b80f2dca5371e8b4960f2dc693b1e4785a0f2db694c1e3785a0f2d7a58c1e3b49620dfce13b96457a820dfce1375a89b64',
+  '20dfbe14c96357a820df7e18c5a39b6420fdce31b946578a20fdce31758a9b4620fdec139b64578a20fdec1357a89b462d0fca5371e896b42d0fc693b1e45a782d0fb694c1e35a782d0f7a58c1e396b4',
+  '2f0d96b4e1c3587a2f0db496c3e1587a2f0d5a78e1c394b62f0d785ac3e194b603cfde1274b8a96503cfde12b87465a903cfed2174b89a5603cfed21b874569a03cfbe14d87265a903cf7e18d4b2a965',
+  '03cfbd24e871569a03cf7d28e4b19a5603fcde21659ab84703fcde21a956748b03fced1256a9b84703fced129a65748b0c3feb4172d895a60c3fe781b2d4596a0c3fdb4271e8a6950c3fd782b1e46a59',
+  '0c3f7b48d1e2a6950c3f7b48e2d195a60c3fb784d1e26a590c3fb784e2d1596a0cf3b964578ae21d0cf37b84956ae21d0cf37b84a659d12e0cf3b74859a6e21d0cf3b7486a95d12e0cf3596ab784e21d',
+  '0f3c5a69e1d2b4870f3c695ad2e1b4870f3c96a5e1d2784b0f3ca596d2e1784b0fc3b874569ae12d0fc35a96b478e12d0fc369a5b478d21e0fc3965a78b4e12d0fc3a56978b4d21e0fc3587ab694e12d',
+  '30cfde21659a8b7430cfde21a95647b830cfed1256a98b7430cfed129a6547b830fcde12478ba96530fcde128b4765a930fced21478b9a5630fced218b47569a30fc4e1bd782a96530fceb41569a8d27',
+  '30fcae51d926478b30fcea159d62478b30fc8e17db4265a930fc4d2be7819a5630fc8d27eb41569a30fc5b4ae6918d273c0f5a69e1d287b43c0f695ad2e187b43c0f96a5e1d24b783c0fa596d2e14b78',
+  '3f0ce4b182d7596a3f0ce96154ba82d73f0ce87142db95a63f0cd4b281e76a593f0c96d2e1a5487b3f0cd296a5e1487b3f0cd87241eba6953f0c487bd1e2a6953f0c487be2d195a63f0c84b7d1e26a59',
+  '3f0c84b7e2d1596a3f0c596ae4b182d7c03fb964578a2ed1c03f7b84956a2ed1c03f7b84a6591de2c03fb74859a62ed1c03fb7486a951de2c03f596ab7842ed1c30fb874569a2de1c30f5a96b4782de1',
+  'c30f69a5b4781ed2c30f965a78b42de1c30fa56978b41ed2c30f587ab6942de103decf1274a9b86503decf12b86574a903defc21a974568b03defc2165b89a4703defa4185b67c2903de8b56f4a17c29',
+  '03edcf21749ab85603edcf21b856749a03edfc129a74658b03edfc1256b8a94703edf94286b57c1a03ed8b65f4927c1a0d3efa4185b672c90d3e7a49c1f2b6850d3ea794f2c1586b0d3e6b58f2c194a7',
+  '0d3e8b56f4a172c90d3eb685c1f27a490de34a79b586f21c0de37a94b658c12f0de3974a68b5f21c0de39a74658bf21c0de3a74958b6f21c0de35b86a479f21c0de3685b97a4f21c0de36b85947af21c',
+  '0de3b6587a94c12f0de3b85647a9f21c0e3df94286b571ca0e3d794ac2f1b5860e3d97a4f1c2685b0e3d5b68f1c2a4970e3d8b65f49271ca0e3db586c2f1794a0ed34a79b586f12c0ed379a4b568c21f',
+  '0ed3974a68b5f12c0ed39a74658bf12c0ed3a74958b6f12c0ed35b86a479f12c0ed3685b97a4f12c0ed36b85947af12c0ed3b56879a4c21f0ed3b85647a9f12c30decf21a94756b830decf21658b9a74',
+  '30defc1247a98b6530defc128b6547a930deca71b5864f2930deb856c7a14f2930edcf129a4765b830edcf12568ba97430edfc21479a8b5630edfc218b56479a30ed6f1894a7cb5230ed8f1674a9cb52',
+  '30edcb5274a98f1630edc972b6854f1a30ed7a49c5b28f1630edb865c7924f1a3d0eca71b58642f93d0e4a79f1c286b53d0ea497c2f15b683d0e685bc2f197a43d0e86b5f1c24a793d0eb856c7a142f9',
+  '3e0dcb5274a981f63e0dc972b68541fa3e0d497af2c185b63e0d7a4981f6c5b23e0d7a49c5b281f63e0d94a7c1f26b583e0d9a4761f8c5b23e0d586bc1f2a7943e0d85b6f2c1497a3e0db865c79241fa',
+  'd03e4a97b5682fc1d03e7a94856b2fc1d03ea7496b851cf2d03e6b85a7491cf2d03e865b79a42fc1d03eb65849a72fc1d30e4a97b5682cf1d30e7a94856b2cf1d30ea47968b51fc2d30e68b5a4791fc2',
+  'd30e865b79a42cf1d30eb65849a72cf104bfea5193c67d2804bf9a56e3c17d2804fbed219a56738c04fb9d26ea51738c04fb9d2673c8ea1504fb7d2893c6ea150b4fec3195a672d80b4f9c36e5a172d8',
+  '0f4be5a192d6783c0f4b9c3672d8e1a50f4b7c3892d6e1a50f4b95a6e2d1783c40bfed219a5637c840bf9d26ea5137c840bf9d2673c8ae5140bf7d2893c6ae5140fb9d62ea15378c40fb9d62738cae15',
+  '40fbd926ae51378c40fbd92637c8ae154b0fe5a192d63c784b0f9c3672d8a5e14b0f7c3892d6a5e14b0f95a6e2d13c784f0ba5e1d296387c4f0be1a596d2387c4f0b3c78d296a1e54f0b783c96d2a1e5',
+  '05afde1263c9b87405afde12b87463c905afbe1472d8c96305afbe14d87263c905afeb4172d89c3605af6e19d3c2b87405af7e18b2d4c96305afc963b2d47e1805afb964c2d37e1805af7b48e2d19c36',
+  '05fabe41639cd82705fabe41c936728d05faeb149c63728d0a5fed2174b893c60a5fcd23b69471e80a5fdc3261e9b7840a5fbd2471e8c6930a5fbd24c69371e80a5f7d28b1e4c6930a5f7d28e4b193c6',
+  '0a5fd782b1e46c390a5f6c39d1e2b7840a5fb784d1e26c390af57d82936ce41b0af57d82c639b14e0af5d7286c93b14e0f5a693cb4e1d2870f5a96c3e1b4782d0f5ac396b4e1782d0fa569c3d278b41e',
+  '0fa5963c78d2e14b0fa5c36978d2b41e50afbe41639c8d7250afbe41c93627d850afeb1436c98d7250afeb149c6327d850fa2e1db784c96350fabe14278dc96350fabe148d2763c950faeb41278d9c36',
+  '50faeb418d27369c50fa6e91b34c8d2750fae6193bc48d2750fa8e17bd2463c950fa2b4de7819c3650fa2d69c387be1450fa692d87c3be1450fa9b64ec13278d50fab946ce31278d50fa8b47ed21369c',
+  '5a0f3c69e1b487d25a0f693cb4e187d25a0f96c3e1b42d785a0fc396b4e12d785f0ae2d184b7396c5f0ac3e1b496287d5f0ae1c396b4287d5f0ae87124bd93c65f0ab2d481e76c395f0a287db1e4c693',
+  '5f0a287de4b193c65f0a82d7b1e46c395f0a82d7e4b1396c5f0a3cb4e16982d75f0ab43c69e182d75f0a8c73629db1e45f0ac83726d9b1e45f0ab87421edc693a05f7d82936c4eb1a05f7d82c6391be4',
+  'a05fd72839c64eb1a05fd7286c931be4a50f3c96d2784be1a50f69c3d2781eb4a50f963c78d24be1a50fc36978d21eb405beaf1472c9d86305beaf14d86372c905befa4163d89c2705ebaf41729cd836',
+  '05ebaf41d836729c05ebfa149c72638d0b5e7c29a1f4d6830b5e6d38f4a192c70b5ed683a1f47c290be57c92d638a14f0be5972c68d3f41a0be59c72638df41a0be5683d97c2f41a0be56d83927cf41a',
+  '0be5d6387c92a14f0e5b792ca4f1d3860e5b97c2f1a4683d0e5bd386a4f1792c0eb579c2d368a41f0eb5972c68d3f14a0eb59c72638df14a0eb5683d97c2f14a0eb56d83927cf14a0eb5d36879c2a41f',
+  '50beaf41c92736d850beaf41638d9c7250befa1427c98d6350befa148d6327c950bead61729c8f4350be792ca6d18f4350be3f48c297ad6150be8f43729cad6150eb2f1cd863a79450ebcf12386da794',
+  '50ebaf149c2763d850ebaf14368dc97250ebfa41279c8d3650ebfa418d36279c50ebd683a9742f1c50eba794d8632f1c5b0ead61729c84f35b0e2c79f1a486d35b0e792ca6d184f35b0e792c84f3a6d1',
+  '5b0ec297a4f13d685b0ec92734f8a6d15b0e683da4f197c25b0e86d3f1a42c795e0b297cf4a183d65e0b92c7a1f46d385e0b368dc1f2a9745e0b386da1f4c7925e0b83d6f4a1297c5e0bd68321fca974',
+  '5e0bd683a97421fc5e0ba794d86321fcb05e2c97d3684fa1b05e7c92836d4fa1b05ec7296d831af4b05e6d83c7291af4b05e863d79c24fa1b05ed63829c74fa1b50e2c97d3684af1b50e7c92836d4af1',
+  'b50ec27968d31fa4b50e68d3c2791fa4b50e863d79c24af1b50ed63829c74af1069fbd2471e8ca53069fdb4271e8ac35069f7d28b1e4ca53069f7b48d1e2ac3506f9dc32ab45718e06f9bd42ca35718e',
+  '06f9db24ac53718e06f9ac35db42718e096fde1274b8a3c5096fbe1472d8c5a3096f7e18b2d4c5a3096f7e18d4b2a3c509f67e81a35cd42b09f67e81c53ab24d0f69d4b2a3c5781e0f69a5c3d2b4781e',
+  '0f69c3a5b4d2781e0f69a4b5d3c2781e0f96a53c78e1d24b0f96c35a78e1b42d609fdc32ab4517e8609fbd4253ac8e71609fbd42ca3517e8609fdb2435ca8e71609fdb24ac5317e8609fac35db4217e8',
+  '60f91d2eb784ca5360f91e3ca587db4260f93c1e87a5db4260f91b4ed782ac3560f9bd24178eca5360f9bd248e1753ca60f9db42178eac3560f9db428e1735ac60f95da2b34c8e1760f9d52a3bc48e17',
+  '60f98d27be1453ca60f9d782ac351b4e60f98b47de1235ac60f9a785dc321b4e690fd4b2a3c51e78690f3c5ad2b487e1690f5a3cb4d287e1690fa5c3d2b41e78690fc3a5b4d21e78690fa4b5d3c21e78',
+  '6f09d1e284b73a5c6f09b1e482d75c3a6f09187eb2d4c5a36f09187ed4b2a3c56f0981e7b2d45c3a6f0981e7d4b23a5c6f09d3c2a87514be6f09d87214bea3c56f093cb4d25a81e76f09b43c5ad281e7',
+  '6f09a3c5d87214be6f09b87412dec5a36f098a7531ced4b26f09a85713ecd4b2906f7e81a35c4db2906f7e81c53a2bd4906fe7183ac54db2906fe7185ca32bd4960f3ca5e1784bd2960f5ac3e1782db4',
+  '960fa53c78e14bd2960fc35a78e12db406bd9f2471cae85306bd9f24e85371ca06db7c1a83e5f92406db9f4271ace83506db9f42e83571ac06db8e3571caf92406db8e35f94271ac0b6d7c1a92f4e583',
+  '0b6de58392f47c1a0bd67ca1e538924f0bd6e5387ca1924f0d6b7a1c94f2e3850d6b7c1a83e5f2940d6bf49283e57a1c0d6b8e3571caf2940d6be38594f27a1c0db67ac1e358942f0db6e3587ac1942f',
+  '60bd9f42ca1735e860bd9f42538eac7160bdf92417ca8e5360bdf9248e5317ca60db1f2ce85397a460dbcf21385e97a460db1c7ae3859f2460dbac71538e9f2460db9f24ac1753e860db9f24358eca71',
+  '60dbf94217ac8e3560dbf9428e3517ac60db583ea7c19f2460dbe5839a741f2c60dbe83517ca9f2460dbe8359f4217ac60db97a4e8531f2c6b0d1c7af29485e36b0dc1a794f23e586b0d583e94f2a7c1',
+  '6b0d85e3f2941c7a6d0b1a7cf49283e56d0b1c7ae38592f46d0ba1c792f45e386d0bac71538e92f46d0b94f2e3851a7c6d0b358ec2f19a746d0b385e92f4c7a16d0b583ea7c192f46d0b83e5f4921a7c',
+  '6d0be58312fc9a746d0be5839a7412fc6d0be83517ca92f46d0b97a4e85312fcb06d1ca7e3584f92b06d7ca1835e4f92b06dc71a5e8329f4b06d5e83c71a29f4b06d853e7ac14f92b06de5381ac74f92',
+  'b60d1ca7e35849f2b60d7ca1835e49f2b60dc17a58e32f94b60d58e3c17a2f94b60d853e7ac149f2b60de5381ac749f270f81b4ea695cd2370f81e96c34bad2570f8961e4bc3ad2570f82da5c34b9e16',
+  '70f8a52d4bc39e1670f8ab45169ecd237f08196ea4b5c2d37f084cb3916ea2d57f084cb3a25d91e67f08c43b19e6a2d57f08c43b2ad591e67f08a96514bec2d3807feb41369c5da2807fe6195bc23da4',
+  '807fdb4235ac6e91807f3b4ce6915da2807f3b4cd5a26e91870fe96134bc5ad2870fda5234bc69e1870f5cb2e1693ad4870f3a5cd4b269e1870f396ce4b15ad2709e2c5bd3a48f61709ebc5243ad8f61',
+  '709ecb25ad4316f8709e4a3db5c28f61709ead43cb2516f8709eda3425cb8f6170e94f1abc2583d670e9af145c2b83d670e9bc258f1643da70e9cb52168fad3470e93a4d85b6cf1270e9ad34168fcb52',
+  '70e9da438f1625bc70e98b5634adcf12790e2c5bd3a486f1790ebc5243ad86f1790ec2b5a4d31f68790e4a3db5c286f1790ea4d3c2b51f68790eda3425cb86f17e09186fc5b2a3d47e09186fa3d4c5b2',
+  '7e0981f6b2c54d3a7e0981f6d4a32b5c7e0952cba1f48d367e09b2c541fa8d367e093a4d85b6c1f27e098b5634adc1f2907e6f81c52b3ad4907e6f81a34d5cb2907ef6182bc54da3907ef6184da32bc5',
+  '907e6da1b25c4f83907e6cb1d34a2f85907eb52c6ad14f83907e3f84c25b6da1907e4f83b25c6da1907ed43a6bc12f85970e6da1b25c48f3970e6cb1d34a28f5970e2cb5f1684ad3970eb52c6ad148f3',
+  '970eb52c48f36ad1970ec25b68f13da4970ec52b38f46ad1970e4ad3f1682cb5970ea43d68f15bc2970ed43a6bc128f570ad1c6be3948f5270adbc61439e8f5270adcb169e4325f870ad493eb6c18f52',
+  '70ad9e43cb1625f870ade93416cb8f5270dabc168f2543e970dacb61258f9e3470da9e34258fcb6170dae9438f2516bc7a0d1c6be39485f27a0dbc61439e85f27a0dc1b694e32f587a0d493eb6c185f2',
+  '7a0d94e3c1b62f587a0de93416cb85f27d0a285fc6b193e47d0a285f93e4c6b17d0a82f5b1c64e397d0a82f5e4931b6ca07d1f86e4395bc2a07d6f81943e5bc2a07d5f82c61b39e4a07d5f82934e6cb1',
+  'a07df5281bc64e93a07df5284e931bc6a07d5bc2e4391f86a07de3495cb21f86a70d1cb6f25849e3a70dc16b58f23e94a70d5bc2e43918f6a70d49e3f2581cb6a70d934e68f15cb2a70d943e58f26bc1',
+  'a70de34918f65cb2a70de3495cb218f670bca61d59e28f4370bcad61438f9e5270bcd61a29e58f4370bcda168f4325e970bc2e95d16a8f4370bc592e86d3af4170bc5e92a16d8f4370bc9e52438fad61',
+  '70bce9258f4316da70bc4f83a16d9e5270bc8d63529eaf4170cb1a6de5928f3470cbad169e2543f870cbda61259e8f3470cb295ed6a18f3470cb9e25ad1643f870cbe95216ad8f347b0ca61d59e284f3',
+  '7b0ca61d48f395e27b0cd61a29e584f37b0c2e95d16a84f37b0c592e86d3a4f17b0c5e92a16d84f37b0c483fa6d195e27b0c483f95e2a6d17b0c84f3d1a62e597b0c84f3e2951d6a7b0c8d63529ea4f1',
+  '7c0b1a6de59283f47c0ba1d692e54f387c0bda61259e83f47c0b295ed6a183f47c0b92e5a1d64f387c0be95216ad83f4b07c6da1834f5e92b07cd61a4f8329e5b07c2f85d61a49e3b07c5f82a61d49e3',
+  'b07c5e92834f6da1b07c952e4ad36f81b07ce5294f831ad6b07c4da3925e6f81b70ca16d58f24e93b70cd16a28f54e93b70c952e4ad368f1b70c48f3d16a2e95b70c48f3e2591da6b70c843f6ad159e2',
+  'b70c843f59e26ad1b70c4da3925e68f112cfde03a97465b812cfde0365b8a97412fced0347a9b85612fced038b65749a1c2fa794d0e36b581c2f6b58d0e3a7941f2c4a79e0d3b5861f2c86b5e0d3794a',
+  '21cfed039a7456b821cfed0356b89a7421fcde03479ab86521fcde038b5674a921fc7e0985b6da4321fc9e0765b8da432c1f97a4e0d35b682c1f5b68e0d397a42f1c497ad0e3b6852f1c6b5890e7d4a3',
+  '2f1c85b6d0e37a492f1c8b5670e9d4a312decf0365a9b87412decf03a96574b812deaf05c96374b812deaf0574b8c96312de6f09c5a3b87412de7f08a4b5c96312edfc0347b8a95612edfc038b74659a',
+  '1d2eca5360f9b7841d2ec693a0f57b481d2eab4570f8c6931d2e7b48a0f5c6931d2e6a59c0f3b7841d2ea695c0f37b481e2d4b78f0c3a5961e2d87b4f0c3695a21defc0347b89a6521defc038b7456a9',
+  '21edcf03569ab87421edcf039a5674b821edfb048c73569a21ed5f0ac693b87421ed9f06ca5374b82d1e4b78f0c396a52d1e87b4f0c35a692e1dc5a390f67b482e1dc96350fab7842e1d87c3f0b4596a',
+  '2e1d596ac0f3b7842e1d95a6c0f37b4813cefd0246b9a87513cefd028a7564b91c3e4b69f0d2a7851c3e87a5f0d26b4931ecdf02487ba69531ecdf026a5984b731ec4f0bd872a69531ec6f09da5284b7',
+  '3e1cd5a260f98b473e1cd78240fba9653e1c478bd0f2a9653e1c65a9d0f28b4714afbe05c97263d814afbe0563d8c97214faeb058d63729c14fa7b0c86d3e9251a4fc792b0e56d381a4f6d38b0e5c792',
+  '1f4a86d3e0b5792c1f4a8d6370bce29541afeb059c7236d841afeb0536d89c7241fa3e0dc972b68541fade03297cb68541fabe05279cd86341fabe058d3672c94a1f97c2e0b53d684a1f3d68e0b597c2',
+  '4f1a279cd0e3b8654f1a297cb0e5d6834f1ac79230edb8654f1a83d6b0e57c2914befd028a7563c914becf03a96572d814beaf0563c9d87214beaf05c96372d814be6f09a3c5d87214ebfa058d72639c',
+  '1b4eac3560f9d7821b4e6c39a0f5d7821b4ec693a0f57d281b4ea695c0f37d281b4e87a5f0d26c391e4b87d2f0a5693c41befa0527d89c6341befa058d7236c941eb3f0ca695d87241ebaf05369cd872',
+  '41ebaf059c3672d841eb9f06ac3572d841ebf7082ad59c364b1e2d78f0a596c34b1e87d2f0a53c694e1b2da5f07893c64e1ba3c590f67d284e1b396ca0f5d7824e1b93c6a0f57d284e1ba96530fcd782',
+  '51ea2f0db874c69351eabf04287dc69351eabf046c3982d751ea6f09bc3482d751ea8c73fb04269d5e1af0b487c3296d5e1a278db0f4c9635e1ab3c460f98d275e1a63c9b0f48d275e1ab78420fdc963',
+  '168fcb5270e9ad34168fad3470e9cb52186f7e09c5b2a3d4186f7e09a3d4c5b261f85e0bad3492c761f8be054d3a92c761f8cb529e0734ad61f8ad349e0752cb6f1890e7c5b23a4d6f1890e7a3d45c2b',
+  '6f1843dab0e59c276f18a3d450eb9c27816fe7095cb23ad4816fe7093ad45cb2861f5bc2e0793da4861f3da4e0795bc2169eab4570f8cd23169e7b48a0f5cd23196eaf0574b8c2d3196e7f08a4b5c2d3',
+  '61e9870f5ad2bc346e195da2807fb3c4916ef7082cb54ad3961e2bc5f0784da316ad7c0b83f4e95216ad8f3470cbe9521a6d7c0b83f4e5921a6d8f3470cbe59261adb70c48f39e5261adc70b38f49e52',
+  '61adcb079e5234f861ad5e92b07c8f4361ad3f84c07b9e5261ad4f83b07c9e5261dabc078f3452e961da8f34bc0752e96a1db70c59e284f36a1db70c48f395e26a1dc70b38f495e26a1d95e2c0b73f48',
+  '6a1d3f84c07b95e26a1d4f83b07c95e26d1ab0c783f45e296d1a83f4b0c75e29a16dc70b5e9238f4a61d59e2c07b3f8416cb7a0d85f2e93416cb8f5270ade9341c6b7a0d85f2e3941c6b8f5270ade394',
+  '61bcda078f5234e961bc8f52da0734e961cbad079e3452f86b1cd0a785f23e496b1c85f2d0a73e496c1b93e4a0d75f28b16ca70d5e9248f3b16cd70a2e9548f3b16c4e93d70a28f5b61cd07a49e32f85',
+  'b61c29e5d07a4f83b61c59e2a07d4f8371e82f0d9a56c4b371e84f0b9c36a2d571e89f062a5dc4b371e89f064c3ba2d571e8ac359f0642db71e8ca539f0624bd71e89c36af0542db71e89a56cf0324bd',
+  '7e18c0f395a62b4d7e18a0f593c64d2b7e1890f6a3c54d2b7e1890f6c5a32b4d7e1825ad90f6cb437e1843cb90f6ad257e1893c640fbad257e1895a620fdcb43817ef6092bd45ca3817ef6094db23ac5',
+  '871e2db4f0695ac3871e4bd2f0693ca571ac8e53db0624f971ca8e35bd0642f97a1cd0b685e32f497c1ab0d683e54f29a17cd60b4f9238e5a17c4f92d60b38e5a71cd06b49f23e85a71c49f2d06b3e85'
+  ];
+  const FOURTH_DATA = FOURTH_ENC.join('');
+  const FOURTH_COUNT = 880;
+
+  /* 每格 1 个 hex 字符（0-f 对应 1-16），16 字符 = 一个 4×4 幻方。
+     880 个本质构型，枚举结果已与理论值 7040/8 精确对上。 */
+  function decodeFourth(i) {
+    const off = i * 16;
+    const m = [];
+    for (let r = 0; r < 4; r++) {
+      const row = [];
+      for (let c = 0; c < 4; c++) {
+        row.push(parseInt(FOURTH_DATA.charAt(off + r * 4 + c), 16) + 1);
+      }
+      m.push(row);
+    }
+    return m;
+  }
+
+  /* 用 Proxy 伪装成数组：可读 length、可按索引取，但不预先展开 880 个矩阵 */
+  const FOURTH_POOL = new Proxy({}, {
+    get(t, k) {
+      if (k === 'length') return FOURTH_COUNT;
+      if (typeof k === 'string') {
+        const i = Number(k);
+        if (Number.isInteger(i) && i >= 0 && i < FOURTH_COUNT) return decodeFourth(i);
+      }
+      return undefined;
+    }
+  });
+
+  const M6 = [
+    [35,  1,  6, 26, 19, 24],
+    [ 3, 32,  7, 21, 23, 25],
+    [31,  9,  2, 22, 27, 20],
+    [ 8, 28, 33, 17, 10, 15],
+    [30,  5, 34, 12, 14, 16],
+    [ 4, 36, 29, 13, 18, 11]
+  ];
+
+  function siamese(n) {
+    const m = [];
+    for (let r = 0; r < n; r++) m.push(new Array(n).fill(0));
+    let r = 0, c = (n - 1) >> 1;
+    for (let k = 1; k <= n * n; k++) {
+      m[r][c] = k;
+      const nr = (r - 1 + n) % n;
+      const nc = (c + 1) % n;
+      if (m[nr][nc] !== 0) r = (r + 1) % n;
+      else { r = nr; c = nc; }
+    }
+    return m;
+  }
+
+  /* ---------- 拉丁方叠加族（n 为质数时适用：5、7）----------
+     M[i][j] = A[i][j] + n·B[i][j] + 1
+     A = (a1·i + b1·j) mod n    B = (a2·i + b2·j) mod n
+     A、B 须为「对角拉丁方」（行/列/两对角线皆为 0..n-1 的排列）且相互正交。
+     条件：a,b ≠ 0；a±b ≢ 0；a1·b2 − a2·b1 ≢ 0 (mod n)
+     注意：这类幻方同时是 panmagic（泛对角）——结构同质、只差参数，
+     不能代表 2.75 亿量级的全部多样性。
+     6 阶不存在正交拉丁方对（Euler 36 officers，Tarry 1901），此法失效。 */
+  function latinParams(n) {
+    const out = [];
+    const nz = [];
+    for (let v = 1; v < n; v++) nz.push(v);
+    const m = nz.length;
+    for (let i1 = 0; i1 < m; i1++) {
+      const a1 = nz[i1];
+      for (let i2 = 0; i2 < m; i2++) {
+        const b1 = nz[i2];
+        if ((a1 - b1 + n) % n === 0 || (a1 + b1) % n === 0) continue;
+        for (let i3 = 0; i3 < m; i3++) {
+          const a2 = nz[i3];
+          for (let i4 = 0; i4 < m; i4++) {
+            const b2 = nz[i4];
+            if ((a2 - b2 + n) % n === 0 || (a2 + b2) % n === 0) continue;
+            if ((((a1 * b2 - a2 * b1) % n) + n) % n === 0) continue;
+            out.push([a1, b1, a2, b2]);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  function latinMatrix(n, p) {
+    const a1 = p[0], b1 = p[1], a2 = p[2], b2 = p[3];
+    const m = [];
+    for (let i = 0; i < n; i++) {
+      const row = [];
+      for (let j = 0; j < n; j++) {
+        const A = (a1 * i + b1 * j) % n;
+        const B = (a2 * i + b2 * j) % n;
+        row.push(A + n * B + 1);
+      }
+      m.push(row);
+    }
+    return m;
+  }
+
+  /* 按需生成的池：只提供 length 与索引访问，不预先展开全部矩阵 */
+  function lazyPool(total, getter) {
+    return new Proxy({}, {
+      get(t, k) {
+        if (k === 'length') return total;
+        if (typeof k === 'string') {
+          const i = Number(k);
+          if (Number.isInteger(i) && i >= 0 && i < total) return getter(i);
+        }
+        return undefined;
+      }
+    });
+  }
+
+  const POOL_CACHE = new Map();
+
+  function buildMatrixPool(n) {
+    if (n === 3) return [LUOSHU];
+    if (n === 4) return FOURTH_POOL;
+    if (n === 6) return [M6];
+    if (POOL_CACHE.has(n)) return POOL_CACHE.get(n);
+
+    const params = latinParams(n);
+    const base = siamese(n);
+    // 索引 0 = Siamese 解，1..N = 拉丁方构型
+    const pool = lazyPool(params.length + 1, (i) =>
+      (i === 0 ? base : latinMatrix(n, params[i - 1]))
+    );
+    POOL_CACHE.set(n, pool);
+    return pool;
+  }
+
+  /* ============ D4：4 旋转 × 2 手性 ============ */
+  function rotate90(m) {
+    const n = m.length;
+    const out = [];
+    for (let r = 0; r < n; r++) {
+      const row = new Array(n);
+      for (let c = 0; c < n; c++) row[c] = m[n - 1 - c][r];
+      out.push(row);
+    }
+    return out;
+  }
+  function mirrorH(m) { return m.map((r) => r.slice().reverse()); }
+
+  // rot ∈ 0..3，mir 为手性翻转
+  function orient(m, rot, mir) {
+    let cur = m.map((r) => r.slice());
+    if (mir) cur = mirrorH(cur);
+    for (let k = 0; k < rot; k++) cur = rotate90(cur);
+    return cur;
+  }
+
+  const POS3 = ['左上', '上中', '右上', '左中', '正中', '右中', '左下', '下中', '右下'];
+
+  /* ============ 场景构建 ============ */
+  const HALF = 1.5;
+
+  function buildScene(n, cfg, rot, mir) {
+    const pool = buildMatrixPool(n);
+    const ci = ((cfg % pool.length) + pool.length) % pool.length;
+    const mat = orient(pool[ci], rot, mir);
+
+    const g = 3 / n;
+    const cells = [];
+    const posOf = new Array(n * n + 1);
+    let oneP = null;
+
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const v = mat[r][c];
+        const cell = {
+          n: v,
+          x: (c - (n - 1) / 2) * g,
+          z: (r - (n - 1) / 2) * g,
+          gua: (n === 3) ? GUA[v] : ''
+        };
+        cells.push(cell);
+        posOf[v] = cell;
+        if (v === 1) oneP = { r, c };
+      }
+    }
+
+    const arcs = [];
+    for (let k = 1; k < n * n; k++) {
+      arcs.push({ a: posOf[k], b: posOf[k + 1], idx: k - 1 });
+    }
+
+    return { n, g, cells, arcs, ci, oneP, poolSize: pool.length };
+  }
+
+  /* ============ 状态 ============ */
+  let order = 3;
+  let cfg = 0;
+  let rot = 0;
+  let mir = false;
+  let phaseUp = true;
+  let arcMode = 'semi';
+  let scene = buildScene(order, cfg, rot, mir);
+
+  let SEG_DELAY = 0.26;
+  let SEG_DUR = 0.50;
+
+  let spin = false;
+  let dragging = false;
+  let startTime = performance.now();
+  let elapsed = 0;
+
+  function poolSize() { return buildMatrixPool(order).length; }
+
+  function rebuild() {
+    scene = buildScene(order, cfg, rot, mir);
+    const cnt = scene.arcs.length;
+    SEG_DELAY = clamp(0.045, 0.26, 4.5 / Math.max(1, cnt));
+    SEG_DUR = clamp(0.30, 0.55, SEG_DELAY * 2.2);
+    startTime = performance.now();
+  }
+
+  /* ============ 相机 ============ */
+  const FOV = 46 * Math.PI / 180;
+  const cam = { az: 0.38, el: 0.60, dist: 9.4 };
+  let eye, fwd, rightV, upv, focal;
+
+  function setupCamera() {
+    const ce = Math.cos(cam.el), se = Math.sin(cam.el);
+    eye = {
+      x: cam.dist * ce * Math.sin(cam.az),
+      y: cam.dist * se,
+      z: cam.dist * ce * Math.cos(cam.az)
+    };
+    fwd = normalize({ x: -eye.x, y: -eye.y, z: -eye.z });
+    rightV = normalize(cross(fwd, { x: 0, y: 1, z: 0 }));
+    upv = cross(rightV, fwd);
+    focal = (H * 0.5) / Math.tan(FOV * 0.5);
+  }
+
+  const _p3 = { x: 0, y: 0, z: 0 };
+  const _p2 = { x: 0, y: 0, z: 0 };
+
+  function proj(px, py, pz, out) {
+    const dx = px - eye.x, dy = py - eye.y, dz = pz - eye.z;
+    const vz = dx * fwd.x + dy * fwd.y + dz * fwd.z;
+    const vx = dx * rightV.x + dy * rightV.y + dz * rightV.z;
+    const vy = dx * upv.x + dy * upv.y + dz * upv.z;
+    const s = focal / (vz > 0.05 ? vz : 0.05);
+    out.x = W * 0.5 + vx * s;
+    out.y = H * 0.5 - vy * s;
+    out.z = vz;
+    return out;
+  }
+
+  /* ============ 弧线 ============ */
+  function arcPt(a, b, up, t, out) {
+    const mx = (a.x + b.x) * 0.5, mz = (a.z + b.z) * 0.5;
+    const hx = (b.x - a.x) * 0.5, hz = (b.z - a.z) * 0.5;
+    const half = Math.sqrt(hx * hx + hz * hz);
+    const ux = hx / half, uz = hz / half;
+    const h = (arcMode === 'semi') ? half : (0.5 * scene.g);
+    const th = Math.PI * t;
+    const c = Math.cos(th), s = Math.sin(th);
+    out.x = mx - half * c * ux;
+    out.z = mz - half * c * uz;
+    out.y = (up ? 1 : -1) * h * s;
+    return out;
+  }
+
+  /* ============ 绘制：平面 ============ */
+  function drawPlane() {
+    const g = scene.g, n = scene.n;
+    const corners = [
+      [-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]
+    ];
+
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      proj(corners[i][0], 0, corners[i][1], _p2);
+      if (i === 0) ctx.moveTo(_p2.x, _p2.y);
+      else ctx.lineTo(_p2.x, _p2.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(78, 132, 196, 0.10)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(138, 186, 244, 0.40)';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    ctx.beginPath();
+    for (let k = 1; k < n; k++) {
+      const v = -HALF + k * g;
+      proj(v, 0, -HALF, _p2); ctx.moveTo(_p2.x, _p2.y);
+      proj(v, 0,  HALF, _p2); ctx.lineTo(_p2.x, _p2.y);
+      proj(-HALF, 0, v, _p2); ctx.moveTo(_p2.x, _p2.y);
+      proj( HALF, 0, v, _p2); ctx.lineTo(_p2.x, _p2.y);
+    }
+    ctx.strokeStyle = 'rgba(110, 165, 230, 0.16)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  /* ============ 绘制：弧线 ============ */
+  function drawArcs(prog, wantUp) {
+    const arcs = scene.arcs;
+    const n = scene.n;
+    const lw = n <= 4 ? 3.2 : (n <= 5 ? 2.6 : 2.1);
+    const blur = n <= 4 ? 13 : (n <= 5 ? 9 : 5);
+
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (let i = 0; i < arcs.length; i++) {
+      const up = ((i % 2 === 0) === phaseUp);
+      if (up !== wantUp) continue;
+
+      const p = prog[i];
+      if (p <= 0.001) continue;
+
+      const arc = arcs[i];
+      const hx = (arc.b.x - arc.a.x) * 0.5, hz = (arc.b.z - arc.a.z) * 0.5;
+      const half = Math.sqrt(hx * hx + hz * hz);
+
+      const density = clamp(14, 56, Math.ceil(18 + half * 34));
+      const steps = Math.max(2, Math.ceil(density * p));
+
+      ctx.beginPath();
+      for (let k = 0; k <= steps; k++) {
+        const t = (p * k) / steps;
+        arcPt(arc.a, arc.b, up, t, _p3);
+        proj(_p3.x, _p3.y, _p3.z, _p2);
+        if (k === 0) ctx.moveTo(_p2.x, _p2.y);
+        else ctx.lineTo(_p2.x, _p2.y);
+      }
+
+      ctx.strokeStyle = up ? '#ff8a3d' : '#3fbdf5';
+      ctx.lineWidth = lw;
+      ctx.shadowColor = up ? 'rgba(255, 138, 61, 0.60)' : 'rgba(63, 189, 245, 0.52)';
+      ctx.shadowBlur = blur;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  /* ============ 绘制：格心光斑 + 数字 + 卦名 ============ */
+  function nodeAlpha(v, t) {
+    const appear = v <= 1 ? 0 : (v - 2) * SEG_DELAY + SEG_DUR * 0.60;
+    return clamp((t - appear) / 0.24, 0, 1);
+  }
+
+  function drawNodes(t) {
+    const n = scene.n;
+    const r = clamp(8, 20, 20 * Math.sqrt(3 / n));
+
+    for (let i = 0; i < scene.cells.length; i++) {
+      const cell = scene.cells[i];
+      const a = nodeAlpha(cell.n, t);
+      if (a <= 0) continue;
+
+      proj(cell.x, 0, cell.z, _p2);
+      const gd = ctx.createRadialGradient(_p2.x, _p2.y, 0, _p2.x, _p2.y, r);
+      gd.addColorStop(0, 'rgba(176, 212, 255, ' + (0.14 * a) + ')');
+      gd.addColorStop(1, 'rgba(176, 212, 255, 0)');
+      ctx.fillStyle = gd;
+      ctx.beginPath();
+      ctx.arc(_p2.x, _p2.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawLabels(t) {
+    const n = scene.n;
+    const fs = clamp(9, 16, 16 * Math.sqrt(3 / n));
+    const showGua = (n === 3);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+
+    for (let i = 0; i < scene.cells.length; i++) {
+      const cell = scene.cells[i];
+      const a = nodeAlpha(cell.n, t);
+      if (a <= 0) continue;
+
+      proj(cell.x, 0, cell.z, _p2);
+      const dy = showGua ? -Math.max(4, fs * 0.30) : 0;
+
+      ctx.globalAlpha = a;
+      ctx.font = '600 ' + fs + 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ctx.strokeStyle = 'rgba(7, 10, 14, 0.92)';
+      ctx.lineWidth = Math.max(3, fs * 0.28);
+      ctx.strokeText(String(cell.n), _p2.x, _p2.y + dy);
+      ctx.fillStyle = '#eaf2ff';
+      ctx.fillText(String(cell.n), _p2.x, _p2.y + dy);
+
+      if (showGua) {
+        ctx.font = '400 11px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+        ctx.strokeStyle = 'rgba(7, 10, 14, 0.85)';
+        ctx.lineWidth = 3.2;
+        ctx.strokeText(cell.gua, _p2.x, _p2.y + 11);
+        ctx.fillStyle = 'rgba(160, 186, 214, 0.92)';
+        ctx.fillText(cell.gua, _p2.x, _p2.y + 11);
+      }
+
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /* ============ 主渲染 ============ */
+  function render(t) {
+    const bg = ctx.createRadialGradient(W * 0.5, H * 0.44, 0, W * 0.5, H * 0.44, Math.max(W, H) * 0.78);
+    bg.addColorStop(0, '#111a26');
+    bg.addColorStop(0.55, '#0a1018');
+    bg.addColorStop(1, '#05080c');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    setupCamera();
+
+    const cnt = scene.arcs.length;
+    const prog = new Array(cnt);
+    for (let i = 0; i < cnt; i++) {
+      const raw = (t - i * SEG_DELAY) / SEG_DUR;
+      prog[i] = raw <= 0 ? 0 : easeOut(clamp(raw, 0, 1));
+    }
+
+    if (eye.y >= 0) {
+      drawArcs(prog, false);
+      drawPlane();
+      drawArcs(prog, true);
+    } else {
+      drawArcs(prog, true);
+      drawPlane();
+      drawArcs(prog, false);
+    }
+
+    drawNodes(t);
+    drawLabels(t);
+  }
+
+  /* ============ 主循环 ============ */
+  let lastT = 0;
+
+  function loop(now) {
+    if (!lastT) lastT = now;
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+
+    if (spin && !dragging) cam.az += 0.16 * dt;
+
+    elapsed = (now - startTime) / 1000;
+    render(elapsed);
+    requestAnimationFrame(loop);
+  }
+
+  /* ============ 交互 ============ */
+  const pointers = new Map();
+  let lastX = 0, lastY = 0;
+  let pinchPrev = 0;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      pinchPrev = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      dragging = false;
+      canvas.classList.remove('grabbing');
+    } else if (pointers.size === 1) {
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      canvas.classList.add('grabbing');
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (pinchPrev > 0 && d > 0) cam.dist = clamp(cam.dist * (pinchPrev / d), 5.5, 18);
+      pinchPrev = d;
+      return;
+    }
+
+    if (!dragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    cam.az -= dx * 0.0075;
+    cam.el = clamp(cam.el + dy * 0.006, 0.12, 1.25);
+  });
+
+  function endPointer(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchPrev = 0;
+    if (pointers.size === 0) {
+      dragging = false;
+      canvas.classList.remove('grabbing');
+    }
+    try {
+      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.dist = clamp(cam.dist * (1 + e.deltaY * 0.0011), 5.5, 18);
+  }, { passive: false });
+
+  function replay() { startTime = performance.now(); }
+  canvas.addEventListener('dblclick', replay);
+
+  /* ============ 面板 ============ */
+  const INFO = {
+    3: '本质解 <b>1</b> 类（洛书）· 含朝向共 <b>8</b> 种',
+    4: '本质解 <b>880</b> 类（已全部收录）· 含朝向 <b>7040</b> 种',
+    5: '本质解 <b>275,305,224</b> 类 · 此处 32 个拉丁方构型 + 1 个 Siamese',
+    6: '本质解约 <b>1.775×10¹⁹</b> 类 · 6 阶无正交拉丁方对，只能用 LUX 解',
+    7: '本质解数量<b>尚未知</b> · 此处 432 个拉丁方构型 + 1 个 Siamese'
+  };
+
+  function bindSeg(id, apply) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b || b.disabled) return;
+      apply(b.dataset.v);
+      syncUI();
+      rebuild();
+    });
+  }
+
+  function syncUI() {
+    document.querySelectorAll('#seg-order button').forEach((b) => {
+      b.classList.toggle('on', Number(b.dataset.v) === order);
+    });
+
+    document.querySelectorAll('#seg-rot button').forEach((b) => {
+      const v = b.dataset.v;
+      if (v === 'm') b.classList.toggle('on', mir);
+      else b.classList.toggle('on', Number(v) === rot);
+    });
+
+    document.querySelectorAll('#seg-phase button').forEach((b) => {
+      b.classList.toggle('on', (b.dataset.v === '1') === phaseUp);
+    });
+    document.querySelectorAll('#seg-arc button').forEach((b) => {
+      b.classList.toggle('on', b.dataset.v === arcMode);
+    });
+
+    const ps = poolSize();
+    document.getElementById('cfg-pos').textContent = (scene.ci + 1) + ' / ' + ps;
+    document.getElementById('cfg-prev').disabled = (ps <= 1);
+    document.getElementById('cfg-next').disabled = (ps <= 1);
+    document.getElementById('cfg-rand').disabled = (ps <= 1);
+    document.getElementById('cfg-nav').classList.toggle('off', ps <= 1);
+
+    const sum = order * (order * order + 1) / 2;
+    const hand = mir ? '反（镜像）' : '正';
+    let extra = '';
+    if (order === 3 && scene.oneP) {
+      extra = '<br>1 位 <span class="hl">' + POS3[scene.oneP.r * 3 + scene.oneP.c] +
+              '</span> · 5 恒在正中 · 手性 ' + hand;
+    } else {
+      extra = '<br>手性 ' + hand;
+    }
+
+    document.getElementById('meta').innerHTML =
+      '<b>' + (order === 3 ? '后天八卦（洛书）' : order + ' 阶幻方') + '</b> · 幻和 ' + sum +
+      '<br>' + INFO[order] +
+      (ps > 1 ? '<br>构型 ' + (scene.ci + 1) + ' / ' + ps : '') + extra;
+  }
+
+  bindSeg('seg-order', (v) => { order = Number(v); cfg = 0; });
+  bindSeg('seg-rot', (v) => {
+    if (v === 'm') mir = !mir;
+    else rot = Number(v);
+  });
+  bindSeg('seg-arc', (v) => { arcMode = v; });
+  bindSeg('seg-phase', (v) => { phaseUp = (v === '1'); });
+
+  document.getElementById('cfg-prev').addEventListener('click', () => {
+    const ps = poolSize();
+    if (ps <= 1) return;
+    cfg = (cfg - 1 + ps) % ps;
+    rebuild();
+    syncUI();
+  });
+  document.getElementById('cfg-next').addEventListener('click', () => {
+    const ps = poolSize();
+    if (ps <= 1) return;
+    cfg = (cfg + 1) % ps;
+    rebuild();
+    syncUI();
+  });
+  document.getElementById('cfg-rand').addEventListener('click', () => {
+    const ps = poolSize();
+    if (ps <= 1) return;
+    let next = cfg;
+    while (next === cfg) next = Math.floor(Math.random() * ps);
+    cfg = next;
+    rebuild();
+    syncUI();
+  });
+
+  const btnReplay = document.getElementById('btn-replay');
+  const btnSpin = document.getElementById('btn-spin');
+
+  btnReplay.addEventListener('click', replay);
+  btnSpin.addEventListener('click', () => {
+    spin = !spin;
+    btnSpin.classList.toggle('on', spin);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      replay();
+    } else if (e.key === 'ArrowLeft') {
+      rot = (rot + 3) % 4;
+      rebuild(); syncUI();
+    } else if (e.key === 'ArrowRight') {
+      rot = (rot + 1) % 4;
+      rebuild(); syncUI();
+    }
+  });
+
+  window.addEventListener('resize', resize);
+
+  /* ============ 启动 ============ */
+  resize();
+  rebuild();
+  syncUI();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
